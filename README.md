@@ -1,2 +1,2 @@
 # contracts
-Here are all our smart contracts 
+Here are all our smart contracts.
