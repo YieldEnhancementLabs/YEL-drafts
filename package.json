@@ -1,0 +1,33 @@
+{
+  "name": "YELToken",
+  "version": "1.0.0",
+  "description": "",
+  "main": "deploy.js",
+  "directories": {
+    "test": "test"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/GrassBusinessLabs/YELToken.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/GrassBusinessLabs/YELToken/issues"
+  },
+  "homepage": "https://github.com/GrassBusinessLabs/YELToken#readme",
+  "dependencies": {
+    "dotenv": "^10.0.0",
+    "ethers": "^5.2.0",
+    "node-fetch": "^2.6.1",
+    "openzeppelin-solidity": "^4.1.0",
+    "request": "^2.88.2",
+    "request-promise-native": "^1.0.9",
+    "solidity-create2-deployer": "^0.4.0",
+    "truffle-hdwallet-provider": "^1.0.17"
+  }
+}
