@@ -777,20 +777,45 @@ contract YELCrowdsale is TimedCrowdsale {
 
     uint256 private _initialRate;
     uint256 private _factor;
+    uint256 private _threshold;
+
+    uint256 private _stage5m;
+    uint256 private _stage10m;
+    uint256 private _stage15m;
+    uint256 private _stage20m;
+
+    uint256 private _rate5m;
+    uint256 private _rate10m;
+    uint256 private _rate15m;
+    uint256 private _rate20m;
 
     uint256 private _purchasedTokenAmount;
 
     /**
      * @dev Constructor, takes initial and final rates of tokens received per wei contributed.
      * @param initialRate Number of tokens a buyer gets per wei at the start of the crowdsale
-     * @param finalRate Number of tokens a buyer gets per wei at the end of the crowdsale
+     * @param factor how mach will change the rate after number of purchases reaches threshold
+     * @param threshold Number of tokens to be purchased before the factor gets applied to the rate
      */
-    constructor (uint256 initialRate, uint256 factor, uint256 incrementAmount) public {
-        require(finalRate > 0, "IncreasingPriceCrowdsale: final rate is 0");
-        // solhint-disable-next-line max-line-length
-//        require(initialRate > finalRate, "IncreasingPriceCrowdsale: initial rate is not greater than final rate");
+    constructor (uint256 initialRate, uint256 factor, uint256 threshold) public {
+        require(initialRate > 0, "YELCrowdsale: initial rate is 0");
         _initialRate = initialRate;
+
+        require(factor > 0, "YELCrowdsale: factor is 0");
         _factor = factor;
+
+        require(threshold > 0, "YELCrowdsale: threshold is 0");
+        _threshold = threshold;
+
+        _stage5m = threshold;
+        _stage10m = _stage5m.add(_threshold);
+        _stage15m = _stage10m.add(_threshold);
+        _stage20m = _stage15m.add(_threshold);
+
+        _rate5m = _initialRate.mul(_factor);
+        _rate10m = _rate5m.mul(_factor);
+        _rate15m = _rate10m.mul(_factor);
+        _rate20m = _rate15m.mul(_factor);
     }
 
     /**
@@ -798,7 +823,7 @@ contract YELCrowdsale is TimedCrowdsale {
      * all calls to it are a mistake.
      */
     function rate() public view returns (uint256) {
-        revert("IncreasingPriceCrowdsale: rate() called");
+        revert("YELCrowdsale: rate() called");
     }
 
     /**
@@ -806,6 +831,20 @@ contract YELCrowdsale is TimedCrowdsale {
      */
     function initialRate() public view returns (uint256) {
         return _initialRate;
+    }
+
+    /**
+     * @return the multiplication factor for the price.
+     */
+    function factor() public view returns (uint256) {
+        return _factor;
+    }
+
+    /**
+     * @return amount of tokens to be purchased before multiplication factor is applied.
+     */
+    function threshold() public view returns (uint256) {
+        return _threshold;
     }
 
     /**
@@ -819,10 +858,23 @@ contract YELCrowdsale is TimedCrowdsale {
         }
 
         // solhint-disable-next-line not-rely-on-time
-        uint256 elapsedTime = block.timestamp.sub(openingTime());
-        uint256 timeRange = closingTime().sub(openingTime());
-        uint256 rateRange = _initialRate.sub(_finalRate);
-        return _initialRate.sub(elapsedTime.mul(rateRange).div(timeRange));
+        if(_purchasedTokenAmount > _stage20m){
+            return _rate20m;
+        }
+
+        if(_purchasedTokenAmount > _stage15m){
+            return _rate15m;
+        }
+
+        if(_purchasedTokenAmount > _stage10m){
+            return _rate10m;
+        }
+
+        if(_purchasedTokenAmount > _stage5m){
+            return _rate5m;
+        }
+
+        return _initialRate;
     }
 
     /**
@@ -842,7 +894,7 @@ contract YELCrowdsale is TimedCrowdsale {
      * @param beneficiary Address receiving the tokens
      * @param tokenAmount Number of tokens to be purchased
      */
-    function _processPurchase(address beneficiary, uint256 tokenAmount) override internal {
+    function _processPurchase(address beneficiary, uint256 tokenAmount) internal {
         _deliverTokens(beneficiary, tokenAmount);
         _purchasedTokenAmount = _purchasedTokenAmount.add(tokenAmount);
     }
