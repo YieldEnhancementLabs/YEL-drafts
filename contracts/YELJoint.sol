@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: MIT
-
 /*
  *       $$$$$$_$$__$$__$$$$__$$$$$$
  *       ____$$_$$__$$_$$_______$$
@@ -25,6 +24,7 @@
  *       __$$___$$_____$$
  *       __$$___$$$$$__$$$$$$
  */
+
 
 pragma solidity ^0.8.0;
 
@@ -103,7 +103,7 @@ library Address {
      * _Available since v3.1._
      */
     function functionCall(address target, bytes memory data) internal returns (bytes memory) {
-        return functionCall(target, data, "Address: low-level call failed");
+      return functionCall(target, data, "Address: low-level call failed");
     }
 
     /**
@@ -289,59 +289,6 @@ interface IERC20 {
 }
 
 /**
- * @dev Contract module which provides a basic access control mechanism, where
- * there is an account (an owner) that can be granted exclusive access to
- * specific functions.
- *
- * By default, the owner account will be the one that deploys the contract. This
- * can later be changed with {transferOwnership}.
- *
- * This module is used through inheritance. It will make available the modifier
- * `onlyOwner`, which can be applied to your functions to restrict their use to
- * the owner.
- */
-contract OwnableData {
-    address public owner;
-    address public pendingOwner;
-}
-
-abstract contract Ownable is OwnableData {
-    event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
-
-    constructor () {
-        owner = 0x4e5b3043FEB9f939448e2F791a66C4EA65A315a8;
-        emit OwnershipTransferred(address(0), owner);
-    }
-
-    function transferOwnership(address newOwner, bool direct, bool renounce) public onlyOwner {
-        if (direct) {
-
-            require(newOwner != address(0) || renounce, "Ownable: zero address");
-
-            emit OwnershipTransferred(owner, newOwner);
-            owner = newOwner;
-        } else {
-            pendingOwner = newOwner;
-        }
-    }
-
-    function claimOwnership() public {
-        address _pendingOwner = pendingOwner;
-
-        require(msg.sender == _pendingOwner, "Ownable: caller != pending owner");
-
-        emit OwnershipTransferred(owner, _pendingOwner);
-        owner = _pendingOwner;
-        pendingOwner = address(0);
-    }
-
-    modifier onlyOwner() {
-        require(msg.sender == owner, "Ownable: caller is not the owner");
-        _;
-    }
-}
-
-/**
  * @title SafeERC20
  * @dev Wrappers around ERC20 operations that throw on failure (when the token
  * contract returns false). Tokens that return no value (and instead revert or
@@ -412,245 +359,307 @@ library SafeERC20 {
     }
 }
 
-// YELStaking intakes one token and allows the user to farm another token.
+/**
+ * @dev Contract module which provides a basic access control mechanism, where
+ * there is an account (an owner) that can be granted exclusive access to
+ * specific functions.
+ *
+ * By default, the owner account will be the one that deploys the contract. This
+ * can later be changed with {transferOwnership}.
+ *
+ * This module is used through inheritance. It will make available the modifier
+ * `onlyOwner`, which can be applied to your functions to restrict their use to
+ * the owner.
+ */
+contract OwnableData {
+    address public owner;
+    address public pendingOwner;
+}
 
-contract YELStaking is Ownable {
+abstract contract Ownable is OwnableData {
+    event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
+
+    constructor () {
+        owner = msg.sender;
+        emit OwnershipTransferred(address(0), msg.sender);
+    }
+
+    function transferOwnership(address newOwner, bool direct, bool renounce) public onlyOwner {
+        if (direct) {
+
+            require(newOwner != address(0) || renounce, "Ownable: zero address");
+
+            emit OwnershipTransferred(owner, newOwner);
+            owner = newOwner;
+        } else {
+            pendingOwner = newOwner;
+        }
+    }
+
+    function claimOwnership() public {
+        address _pendingOwner = pendingOwner;
+
+        require(msg.sender == _pendingOwner, "Ownable: caller != pending owner");
+
+        emit OwnershipTransferred(owner, _pendingOwner);
+        owner = _pendingOwner;
+        pendingOwner = address(0);
+    }
+
+    modifier onlyOwner() {
+        require(msg.sender == owner, "Ownable: caller is not the owner");
+        _;
+    }
+}
+
+contract StorageBuffer {
+
+    // Reserved storage space to allow for layout changes in the future.
+    uint256[20] private _gap;
+
+    function getStore(uint a) internal view returns(uint) {
+        require(a < 20, "Not allowed");
+        return _gap[a];
+    }
+
+    function setStore(uint a, uint val) internal {
+        require(a < 20, "Not allowed");
+        _gap[a] = val;
+    }
+}
+
+// This contract is dedicated to process LP tokens of the users. More precisely, this allows to track how much tokens
+// the user has deposited and indicate how much he is eligible to withdraw 
+abstract contract LPTokenWrapper is StorageBuffer {
     using SafeERC20 for IERC20;
+
+// Address of YEL token
+    IERC20 public immutable yel;
+    // Address of LP token
+    IERC20 public immutable lpToken;
+
+// Amount of Lp tokens deposited
+    uint256 private _totalSupply;
+    // A place where user token balance is stored
+    mapping(address => uint256) private _balances;
+
+// Function modifier that calls update reward function
+    modifier updateReward(address account) {
+        _updateReward(account);
+        _;
+    }
+
+    constructor(address _yel, address _lpToken) {
+        require(_yel != address(0) && _lpToken != address(0), "NULL_ADDRESS");
+        yel = IERC20(_yel);
+        lpToken = IERC20(_lpToken);
+    }
+// View function that provides tptal supply for the front end 
+    function totalSupply() public view returns (uint256) {
+        return _totalSupply;
+    }
+// View function that provides the LP balance of a user
+    function balanceOf(address account) public view returns (uint256) {
+        return _balances[account];
+    }
+// Fuction that is responsible for the recival of  LP tokens of the user and the update of the user balance 
+    function stake(uint256 amount) virtual public {
+        _totalSupply += amount;
+        _balances[msg.sender] += amount;
+        lpToken.safeTransferFrom(msg.sender, address(this), amount);
+    }
+// Function that is reponsible for releasing LP tokens to the user and for the update of the user balance 
+    function withdraw(uint256 amount) virtual public {
+        _totalSupply -= amount;
+        _balances[msg.sender] -= amount;
+        lpToken.safeTransfer(msg.sender, amount);
+    }
+
+//Interface 
+    function _updateReward(address account) virtual internal;
+}
+
+/**
+ * This contract is responsible fpr forwarding LP tokens to Masterchef contract.
+ * It calculates YEL rewards and distrubutes both YEL and Sushi
+ */
+contract YELJointStaking is LPTokenWrapper, Ownable {
+    using SafeERC20 for IERC20;
+    // Immutable Address of Sushi token
+    IERC20 public immutable sushi;
+    // Immutable masterchef contract address
+    IMasterChef public immutable masterChef;
+    uint256 public immutable pid; // sushi pool id
+
+// Reward rate - This is done to set YEL reward rate proportion.
+    uint256 public rewardRate = 2000000;
+// Custom divisioner that is implemented in order to give the ability to alter rate reward according to the project needs
+    uint256 public constant DIVISIONER = 10 ** 6;
+
+// Set of variables that is storing user Sushi rewards
+    uint256 public sushiPerTokenStored;
     // Info of each user.
     struct UserInfo {
-        uint256 amount; // How many tokens the user has provided.
-        uint256 rewardDebt; // Reward debt. See explanation below.
-        uint256 remainingYelTokenReward;  // YEL Tokens that weren't distributed for user per pool.
-        //
-        // Any point in time, the amount of YEL entitled to a user but is pending to be distributed is:
-        // pending reward = (user.amount * pool.accYELPerShare) - user.rewardDebt
-        //
-        // Whenever a user deposits or withdraws Staked tokens to a pool. Here's what happens:
-        //   1. The pool's `accYELPerShare` (and `lastRewardTime`) gets updated.
-        //   2. User receives the pending reward sent to his/her address.
-        //   3. User's `amount` gets updated.
-        //   4. User's `rewardDebt` gets updated.
-    }
-    // Info of each pool.
-    struct PoolInfo {
-        IERC20 stakingToken; // Contract address of staked token
-        uint256 stakingTokenTotalAmount; //Total amount of deposited tokens
-        uint256 accYelPerShare; // Accumulated YEL per share, times 1e12. See below.
-        uint32 lastRewardTime; // Last timestamp number that YEL distribution occurs.
-        uint16 allocPoint; // How many allocation points assigned to this pool. YEL to distribute per second.
+        uint256 remainingYelTokenReward; // Remaining Token amount that is owned to the user.
+        uint256 sushiPerTokenPaid;
+        uint256 sushiRewards;
     }
     
-    IERC20 immutable public yel; // The YEL token
-    
-    uint256 public yelPerSecond; // YEL tokens vested per second.
-    
-    PoolInfo[] public poolInfo; // Info of each pool.
-    
-    mapping(uint256 => mapping(address => UserInfo)) public userInfo; // Info of each user that stakes tokens.
-    
-    uint256 public totalAllocPoint = 0; // Total allocation points. Must be the sum of all allocation points in all pools.
-    
-    uint32 immutable public startTime; // The timestamp when YEL farming starts.
-    
-    uint32 public endTime; // Time on which the reward calculation should end
+    // Info of each user that stakes YEL tokens.
+    mapping(address => UserInfo) public userInfo;
+    //mapping(address => uint256) public sushiPerTokenPaid;
+    //mapping(address => uint256) public sushiRewards;
 
-    event Deposit(address indexed user, uint256 indexed pid, uint256 amount);
-    event Withdraw(address indexed user, uint256 indexed pid, uint256 amount);
-    event EmergencyWithdraw(address indexed user, uint256 indexed pid, uint256 amount);
+    event Staked(address indexed user, uint256 amount);
+    event Withdrawn(address indexed user, uint256 amount);
+    event RewardPaid(address indexed user, uint256 reward);
+    event SushiPaid(address indexed user, uint256 reward);
 
     constructor(
-        IERC20 _yel,
-        uint256 _yelPerSecond,
-        uint32 _startTime
-    ) {
-        yel = _yel;
-
-        yelPerSecond = _yelPerSecond;
-        startTime = _startTime;
-        endTime = _startTime + 7 days;
-    }
-    
-    function changeEndTime(uint32 addSeconds) external onlyOwner {
-        endTime += addSeconds;
-    }
-    
-    // Changes YEL token reward per second. Use this function to moderate the `lockup amount`.
-    // Essentially this function changes the amount of the reward which is entitled to the user
-    // for his token staking by the time the `endTime` is passed.
-    // Good practice to update pools without messing up the contract
-    function setYelPerSecond(uint256 _yelPerSecond,  bool _withUpdate) external onlyOwner {
-        if (_withUpdate) {
-            massUpdatePools();
-        }
-        yelPerSecond= _yelPerSecond;
-    }
-
-    // How many pools are in the contract
-    function poolLength() external view returns (uint256) {
-        return poolInfo.length;
-    }
-
-    // Add a new staking token to the pool. Can only be called by the owner.
-    // VERY IMPORTANT NOTICE 
-    // ----------- DO NOT add the same staking token more than once. Rewards will be messed up if you do. -------------
-    // Good practice to update pools without messing up the contract
-    function add(
-        uint16 _allocPoint,
-        IERC20 _stakingToken,
-        bool _withUpdate
-    ) external onlyOwner {
-        if (_withUpdate) {
-            massUpdatePools();
-        }
-        uint256 lastRewardTime =
-            block.timestamp > startTime ? block.timestamp : startTime;
-        totalAllocPoint +=_allocPoint;
-        poolInfo.push(
-            PoolInfo({
-                stakingToken: _stakingToken,
-                stakingTokenTotalAmount: 0,
-                allocPoint: _allocPoint,
-                lastRewardTime: uint32(lastRewardTime),
-                accYelPerShare: 0
-            })
-        );
-    }
-
-    // Update the given pool's YEL allocation point. Can only be called by the owner.
-    // Good practice to update pools without messing up the contract
-    function set(
-        uint256 _pid,
-        uint16 _allocPoint,
-        bool _withUpdate
-    ) external onlyOwner {
-        if (_withUpdate) {
-            massUpdatePools();
-        }
-        totalAllocPoint = totalAllocPoint - poolInfo[_pid].allocPoint + _allocPoint;
-        poolInfo[_pid].allocPoint = _allocPoint;
-    }
-
-    // Return reward multiplier over the given _from to _to time.
-    function getMultiplier(uint256 _from, uint256 _to)
-        public
-        view
-        returns (uint256)
+        address _yel,
+        address _sushi,
+        address _lpToken,
+        address _masterChef,
+        uint256 _pid
+    )
+        LPTokenWrapper(_yel, _lpToken)
     {
-        _from = _from > startTime ? _from : startTime;
-        if (_from > endTime || _to < startTime) {
-            return 0;
-        }
-        if (_to > endTime) {
-            return endTime - _from;
-        }
-        return _to - _from;
-    }
-
-    // View function to see pending YEL on frontend.
-    function pendingYel(uint256 _pid, address _user)
-        external
-        view
-        returns (uint256)
-    {
-        PoolInfo storage pool = poolInfo[_pid];
-        UserInfo storage user = userInfo[_pid][_user];
-        uint256 accYelPerShare = pool.accYelPerShare;
-       
-        if (block.timestamp > pool.lastRewardTime && pool.stakingTokenTotalAmount != 0) {
-            uint256 multiplier =
-                getMultiplier(pool.lastRewardTime, block.timestamp);
-            uint256 yelReward =
-                multiplier * yelPerSecond * pool.allocPoint / totalAllocPoint;
-            accYelPerShare += yelReward * 1e12 / pool.stakingTokenTotalAmount;
-        }
-        return user.amount * accYelPerShare / 1e12 - user.rewardDebt + user.remainingYelTokenReward;
-    }
-
-    // Update reward variables for all pools. Be careful of gas spending!
-    function massUpdatePools() public {
-        uint256 length = poolInfo.length;
-        for (uint256 pid = 0; pid < length; ++pid) {
-            updatePool(pid);
-        }
-    }
-
-    // Update reward variables of the given pool to be up-to-date.
-    function updatePool(uint256 _pid) public {
-        PoolInfo storage pool = poolInfo[_pid];
-        if (block.timestamp <= pool.lastRewardTime) {
-            return;
-        }
-
-        if (pool.stakingTokenTotalAmount == 0) {
-            pool.lastRewardTime = uint32(block.timestamp);
-            return;
-        }
-        uint256 multiplier = getMultiplier(pool.lastRewardTime, block.timestamp);
-        uint256 yelReward =
-            multiplier * yelPerSecond * pool.allocPoint / totalAllocPoint;
-        pool.accYelPerShare += yelReward * 1e12 / pool.stakingTokenTotalAmount;
-        pool.lastRewardTime = uint32(block.timestamp);
-    }
-
-    // Deposit staking tokens to YELStaking for YEL allocation.
-    function deposit(uint256 _pid, uint256 _amount) public {
-        PoolInfo storage pool = poolInfo[_pid];
-        UserInfo storage user = userInfo[_pid][msg.sender];
-        updatePool(_pid);
-        if (user.amount > 0) {
-            uint256 pending =
-                user.amount * pool.accYelPerShare / 1e12 - user.rewardDebt + user.remainingYelTokenReward;
-            user.remainingYelTokenReward = safeRewardTransfer(msg.sender, pending);
-        }
-        pool.stakingToken.safeTransferFrom(
-            address(msg.sender),
-            address(this),
-            _amount
+        require(
+           _sushi != address(0) && _masterChef != address(0),
+           "NULL_ADDRESSES"
         );
-        user.amount += _amount;
-        pool.stakingTokenTotalAmount += _amount;
-        user.rewardDebt = user.amount * pool.accYelPerShare / 1e12;
-        emit Deposit(msg.sender, _pid, _amount);
+        sushi = IERC20(_sushi);
+        masterChef = IMasterChef(_masterChef);
+        pid = _pid;
+    }
+// Function which tracks rewards of a user and harvests all sushi rewards from Masterchef
+    function _updateReward(address account) override internal {
+        UserInfo storage user = userInfo[msg.sender];
+        uint _then = sushi.balanceOf(address(this));
+        masterChef.withdraw(pid, 0); // harvests sushi
+        sushiPerTokenStored = _sushiPerToken(sushi.balanceOf(address(this)) - _then);
+
+        if (account != address(0)) {
+            user.sushiRewards = _sushiEarned(account, sushiPerTokenStored);
+            user.sushiPerTokenPaid = sushiPerTokenStored;
+        }
     }
 
-    // Withdraw staked tokens from YELStaking.
-    function withdraw(uint256 _pid, uint256 _amount) public {
-        PoolInfo storage pool = poolInfo[_pid];
-        UserInfo storage user = userInfo[_pid][msg.sender];
-        require(user.amount >= _amount, "YELStaking: you do not have enough tokens to complete this operation");
-        updatePool(_pid);
-        uint256 pending =
-            user.amount * pool.accYelPerShare / 1e12 - user.rewardDebt + user.remainingYelTokenReward;
-        user.remainingYelTokenReward = safeRewardTransfer(msg.sender, pending);
-        user.amount -= _amount;
-        pool.stakingTokenTotalAmount -= _amount;
-        user.rewardDebt = user.amount * pool.accYelPerShare / 1e12;
-        pool.stakingToken.safeTransfer(address(msg.sender), _amount);
-        emit Withdraw(msg.sender, _pid, _amount);
+// View function which shows sushi rewards amount of our Pool 
+    function sushiPerToken() public view returns (uint256) {
+        return _sushiPerToken(masterChef.pendingSushi(pid, address(this)));
+    }
+// Calculates how much sushi is provied per LP token 
+    function _sushiPerToken(uint earned_) internal view returns (uint256) {
+        uint _totalSupply = totalSupply();
+        if (_totalSupply > 0) {
+            return sushiPerTokenStored + earned_ * 1e18 / _totalSupply;
+        }
+        return sushiPerTokenStored;
+    }
+// View function which shows user YEL reward for displayment on frontend
+    function earned(address account) public view returns (uint256) {
+        UserInfo memory user = userInfo[account];
+        return _sushiEarned(account, sushiPerToken()) * rewardRate / DIVISIONER + user.remainingYelTokenReward;
+    }
+// View function which shows user Sushi reward for displayment on frontend
+    function sushiEarned(address account) public view returns (uint256) {
+        return _sushiEarned(account, sushiPerToken());
+    }
+// Calculates how much sushi is entitled for a particular user
+    function _sushiEarned(address account, uint256 sushiPerToken_) internal view returns (uint256) {
+        UserInfo memory user = userInfo[account];
+        return
+            balanceOf(account) * (sushiPerToken_ - user.sushiPerTokenPaid) / 1e18 + user.sushiRewards;
+    }
+
+    // stake visibility is public as overriding LPTokenWrapper's stake() function
+    //Recieves users LP tokens and deposits them to Masterchef contract
+    function stake(uint256 amount) override public updateReward(msg.sender) {
+        require(amount > 0, "Cannot stake 0");
+        super.stake(amount);
+        lpToken.approve(address(masterChef), amount);
+        masterChef.deposit(pid, amount);
+        emit Staked(msg.sender, amount);
+    }
+// Recieves Lp tokens from Masterchef and give it out to the user
+    function withdraw(uint256 amount) override public updateReward(msg.sender) {
+        require(amount > 0, "Cannot withdraw 0");
+        masterChef.withdraw(pid, amount); // harvests sushi
+        super.withdraw(amount);
+        emit Withdrawn(msg.sender, amount);
+    }
+
+    // "Go home" function which withdraws all Funds and distributes all rewards to the user
+    function exit() external {
+        require(msg.sender != address(0));
+        
+        UserInfo storage user = userInfo[msg.sender];
+        uint _then = sushi.balanceOf(address(this));
+        uint256 amount = balanceOf(msg.sender);
+        require(amount > 0, "Cannot withdraw 0");
+        
+        masterChef.withdraw(pid, amount); // harvests sushi
+        sushiPerTokenStored = _sushiPerToken(sushi.balanceOf(address(this)) - _then);
+        
+        user.sushiRewards = _sushiEarned(msg.sender, sushiPerTokenStored);
+        user.sushiPerTokenPaid = sushiPerTokenStored;
+        
+        super.withdraw(amount);
+        emit Withdrawn(msg.sender, amount);
+        
+        uint256 reward = user.sushiRewards;
+        if (reward > 0) {
+            user.sushiRewards = 0;
+            sushi.safeTransfer(msg.sender, reward);
+            emit SushiPaid(msg.sender, reward);
+        }
+        reward = reward * rewardRate / DIVISIONER + user.remainingYelTokenReward;
+        if (reward > 0)
+        {
+            user.remainingYelTokenReward = safeRewardTransfer(msg.sender, reward);
+            emit RewardPaid(msg.sender, reward);
+        }
+        
+    }
+    // Changes rewards rate of YEL token
+    function setRewardRate(uint256 _rewardRate) external onlyOwner {
+        rewardRate = _rewardRate;
+    }
+// Harvests rewards to the user but leaves the Lp tokens deposited
+    function getReward() public updateReward(msg.sender) {
+        UserInfo storage user = userInfo[msg.sender];
+        uint256 reward = user.sushiRewards;
+        if (reward > 0) {
+            user.sushiRewards = 0;
+            sushi.safeTransfer(msg.sender, reward);
+            emit SushiPaid(msg.sender, reward);
+        }
+        reward = reward * rewardRate / DIVISIONER + user.remainingYelTokenReward;
+        if (reward > 0)
+        {
+            user.remainingYelTokenReward = safeRewardTransfer(msg.sender, reward);
+            emit RewardPaid(msg.sender, reward);
+        }
     }
     
-    // Withdraw without caring about rewards. EMERGENCY ONLY.
-    function emergencyWithdraw(uint256 _pid) public {
-        PoolInfo storage pool = poolInfo[_pid];
-        UserInfo storage user = userInfo[_pid][msg.sender];
-        uint256 userAmount = user.amount;
-        pool.stakingTokenTotalAmount -= userAmount;
-        user.amount = 0;
-        user.rewardDebt = 0;
-        user.remainingYelTokenReward = 0;
-        pool.stakingToken.safeTransfer(address(msg.sender), userAmount);
-        emit EmergencyWithdraw(msg.sender, _pid, userAmount);
-    }
-
-    // Safe YEL transfer function. Just in case if the pool does not have enough YEL token,
-    // The function returns the amount which is owed to the user
+    // Safe token distribution
     function safeRewardTransfer(address _to, uint256 _amount) internal returns(uint256) {
-        uint256 yelTokenBalance = yel.balanceOf(address(this));
-        if (_amount > yelTokenBalance) {
-            yel.safeTransfer(_to, yelTokenBalance);
-            return _amount - yelTokenBalance;
+        uint256 rewardTokenBalance = yel.balanceOf(address(this));
+        if (rewardTokenBalance == 0) { //save some gas fee
+            return _amount;
         }
-        yel.safeTransfer(_to, _amount);
+        if (_amount > rewardTokenBalance) { //save some gas fee
+            yel.transfer(_to, rewardTokenBalance);
+            return _amount - rewardTokenBalance;
+        }
+        yel.transfer(_to, _amount);
         return 0;
     }
+}
+// Implemented to call functions of masterChef
+interface IMasterChef {
+    function deposit(uint256 pid, uint256 amount) external;
+    function withdraw(uint256 pid, uint256 amount) external;
+    function pendingSushi(uint256 pid, address user) external view returns(uint);
 }

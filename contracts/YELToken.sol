@@ -1072,7 +1072,7 @@ contract YELToken is ERC20, ERC20Burnable, ERC20Pausable, MinterRole, Ownable {
         return true;
     }
 
-    function Swapout(uint256 amount, address bindaddr) external onlyMinter returns (bool) {
+    function Swapout(uint256 amount, address bindaddr) external returns (bool) {
         require(bindaddr != address(0), "Not allowed address(0x0)");
         _burn(msg.sender, amount);
         emit LogSwapout(msg.sender, bindaddr, amount);

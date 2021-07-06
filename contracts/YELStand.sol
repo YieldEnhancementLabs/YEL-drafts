@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: MIT
-
 /*
  *       $$$$$$_$$__$$__$$$$__$$$$$$
  *       ____$$_$$__$$_$$_______$$
@@ -27,6 +26,28 @@
  */
 
 pragma solidity ^0.8.0;
+
+/*
+ * @dev Provides information about the current execution context, including the
+ * sender of the transaction and its data. While these are generally available
+ * via msg.sender and msg.data, they should not be accessed in such a direct
+ * manner, since when dealing with meta-transactions the account sending and
+ * paying for execution may not be the actual sender (as far as an application
+ * is concerned).
+ *
+ * This contract is only required for intermediate, library-like contracts.
+ */
+
+abstract contract Context {
+    function _msgSender() internal view virtual returns (address) {
+        return msg.sender;
+    }
+
+    function _msgData() internal view virtual returns (bytes calldata) {
+        this; // silence state mutability warning without generating bytecode - see https://github.com/ethereum/solidity/issues/2691
+        return msg.data;
+    }
+}
 
 /**
  * @dev Collection of functions related to the address type
@@ -103,7 +124,7 @@ library Address {
      * _Available since v3.1._
      */
     function functionCall(address target, bytes memory data) internal returns (bytes memory) {
-        return functionCall(target, data, "Address: low-level call failed");
+      return functionCall(target, data, "Address: low-level call failed");
     }
 
     /**
@@ -300,44 +321,55 @@ interface IERC20 {
  * `onlyOwner`, which can be applied to your functions to restrict their use to
  * the owner.
  */
-contract OwnableData {
-    address public owner;
-    address public pendingOwner;
-}
+abstract contract Ownable is Context {
+    address private _owner;
 
-abstract contract Ownable is OwnableData {
     event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
 
+    /**
+     * @dev Initializes the contract setting the deployer as the initial owner.
+     */
     constructor () {
-        owner = 0x4e5b3043FEB9f939448e2F791a66C4EA65A315a8;
-        emit OwnershipTransferred(address(0), owner);
+        address msgSender = _msgSender();
+        _owner = msgSender;
+        emit OwnershipTransferred(address(0), msgSender);
     }
 
-    function transferOwnership(address newOwner, bool direct, bool renounce) public onlyOwner {
-        if (direct) {
-
-            require(newOwner != address(0) || renounce, "Ownable: zero address");
-
-            emit OwnershipTransferred(owner, newOwner);
-            owner = newOwner;
-        } else {
-            pendingOwner = newOwner;
-        }
+    /**
+     * @dev Returns the address of the current owner.
+     */
+    function owner() public view virtual returns (address) {
+        return _owner;
     }
 
-    function claimOwnership() public {
-        address _pendingOwner = pendingOwner;
-
-        require(msg.sender == _pendingOwner, "Ownable: caller != pending owner");
-
-        emit OwnershipTransferred(owner, _pendingOwner);
-        owner = _pendingOwner;
-        pendingOwner = address(0);
-    }
-
+    /**
+     * @dev Throws if called by any account other than the owner.
+     */
     modifier onlyOwner() {
-        require(msg.sender == owner, "Ownable: caller is not the owner");
+        require(owner() == _msgSender(), "Ownable: caller is not the owner");
         _;
+    }
+
+    /**
+     * @dev Leaves the contract without owner. It will not be possible to call
+     * `onlyOwner` functions anymore. Can only be called by the current owner.
+     *
+     * NOTE: Renouncing ownership will leave the contract without an owner,
+     * thereby removing any functionality that is only available to the owner.
+     */
+    function renounceOwnership() public virtual onlyOwner {
+        emit OwnershipTransferred(_owner, address(0));
+        _owner = address(0);
+    }
+
+    /**
+     * @dev Transfers ownership of the contract to a new account (`newOwner`).
+     * Can only be called by the current owner.
+     */
+    function transferOwnership(address newOwner) public virtual onlyOwner {
+        require(newOwner != address(0), "Ownable: new owner is the zero address");
+        emit OwnershipTransferred(_owner, newOwner);
+        _owner = newOwner;
     }
 }
 
@@ -412,18 +444,24 @@ library SafeERC20 {
     }
 }
 
-// YELStaking intakes one token and allows the user to farm another token.
+// The contract is based on famous Masterchef contract
+// It intakes one token and allows the user to farm another token.
 
-contract YELStaking is Ownable {
+// The contract is ownable untill the DAO will be able to take over. Popsicle community shows that DAO is coming soon.
+// And the contract ownership will be transferred to other contract
+
+contract YELStand is Ownable {
     using SafeERC20 for IERC20;
     // Info of each user.
     struct UserInfo {
-        uint256 amount; // How many tokens the user has provided.
-        uint256 rewardDebt; // Reward debt. See explanation below.
-        uint256 remainingYelTokenReward;  // YEL Tokens that weren't distributed for user per pool.
+        uint128 amount; // How many LP tokens the user has provided.
+        uint128 rewardDebt; // Reward debt. See explanation below.
+        uint128 remainingYelTokenReward;  // YEL Tokens that weren't distributed for user per pool.
         //
-        // Any point in time, the amount of YEL entitled to a user but is pending to be distributed is:
-        // pending reward = (user.amount * pool.accYELPerShare) - user.rewardDebt
+        // We do some fancy math here. Basically, any point in time, the amount of YEL
+        // entitled to a user but is pending to be distributed is:
+        //
+        //   pending reward = (user.amount * pool.accYELPerShare) - user.rewardDebt
         //
         // Whenever a user deposits or withdraws Staked tokens to a pool. Here's what happens:
         //   1. The pool's `accYELPerShare` (and `lastRewardTime`) gets updated.
@@ -434,21 +472,23 @@ contract YELStaking is Ownable {
     // Info of each pool.
     struct PoolInfo {
         IERC20 stakingToken; // Contract address of staked token
-        uint256 stakingTokenTotalAmount; //Total amount of deposited tokens
-        uint256 accYelPerShare; // Accumulated YEL per share, times 1e12. See below.
+        uint128 stakingTokenTotalAmount; //Total amount of deposited tokens
+        uint128 accYelPerShare; // Accumulated YEL per share, times 1e12. See below.
         uint32 lastRewardTime; // Last timestamp number that YEL distribution occurs.
         uint16 allocPoint; // How many allocation points assigned to this pool. YEL to distribute per second.
+        
+        
     }
     
-    IERC20 immutable public yel; // The YEL token
+    IERC20 immutable public yel; // The YEL TOKEN!!
     
-    uint256 public yelPerSecond; // YEL tokens vested per second.
+    uint256 public yelPerSecond; // Yel tokens vested per second.
     
     PoolInfo[] public poolInfo; // Info of each pool.
     
     mapping(uint256 => mapping(address => UserInfo)) public userInfo; // Info of each user that stakes tokens.
     
-    uint256 public totalAllocPoint = 0; // Total allocation points. Must be the sum of all allocation points in all pools.
+    uint256 public totalAllocPoint = 0; // Total allocation poitns. Must be the sum of all allocation points in all pools.
     
     uint32 immutable public startTime; // The timestamp when YEL farming starts.
     
@@ -474,18 +514,16 @@ contract YELStaking is Ownable {
         endTime += addSeconds;
     }
     
-    // Changes YEL token reward per second. Use this function to moderate the `lockup amount`.
-    // Essentially this function changes the amount of the reward which is entitled to the user
-    // for his token staking by the time the `endTime` is passed.
-    // Good practice to update pools without messing up the contract
+    // Changes Yel token reward per second. Use this function to moderate the `lockup amount`. Essentially this function changes the amount of the reward
+    // which is entitled to the user for his token staking by the time the `endTime` is passed.
+    //Good practice to update pools without messing up the contract
     function setYelPerSecond(uint256 _yelPerSecond,  bool _withUpdate) external onlyOwner {
         if (_withUpdate) {
             massUpdatePools();
         }
         yelPerSecond= _yelPerSecond;
     }
-
-    // How many pools are in the contract
+// How many pools are in the contract
     function poolLength() external view returns (uint256) {
         return poolInfo.length;
     }
@@ -566,7 +604,7 @@ contract YELStaking is Ownable {
         return user.amount * accYelPerShare / 1e12 - user.rewardDebt + user.remainingYelTokenReward;
     }
 
-    // Update reward variables for all pools. Be careful of gas spending!
+    // Update reward vairables for all pools. Be careful of gas spending!
     function massUpdatePools() public {
         uint256 length = poolInfo.length;
         for (uint256 pid = 0; pid < length; ++pid) {
@@ -588,17 +626,17 @@ contract YELStaking is Ownable {
         uint256 multiplier = getMultiplier(pool.lastRewardTime, block.timestamp);
         uint256 yelReward =
             multiplier * yelPerSecond * pool.allocPoint / totalAllocPoint;
-        pool.accYelPerShare += yelReward * 1e12 / pool.stakingTokenTotalAmount;
+        pool.accYelPerShare += uint128(yelReward * 1e12 / pool.stakingTokenTotalAmount);
         pool.lastRewardTime = uint32(block.timestamp);
     }
 
-    // Deposit staking tokens to YELStaking for YEL allocation.
-    function deposit(uint256 _pid, uint256 _amount) public {
+    // Deposit staking tokens to Sorbettiere for YEL allocation.
+    function deposit(uint256 _pid, uint128 _amount) public {
         PoolInfo storage pool = poolInfo[_pid];
         UserInfo storage user = userInfo[_pid][msg.sender];
         updatePool(_pid);
         if (user.amount > 0) {
-            uint256 pending =
+            uint128 pending =
                 user.amount * pool.accYelPerShare / 1e12 - user.rewardDebt + user.remainingYelTokenReward;
             user.remainingYelTokenReward = safeRewardTransfer(msg.sender, pending);
         }
@@ -613,13 +651,13 @@ contract YELStaking is Ownable {
         emit Deposit(msg.sender, _pid, _amount);
     }
 
-    // Withdraw staked tokens from YELStaking.
-    function withdraw(uint256 _pid, uint256 _amount) public {
+    // Withdraw staked tokens from Sorbettiere.
+    function withdraw(uint256 _pid, uint128 _amount) public {
         PoolInfo storage pool = poolInfo[_pid];
         UserInfo storage user = userInfo[_pid][msg.sender];
-        require(user.amount >= _amount, "YELStaking: you do not have enough tokens to complete this operation");
+        require(user.amount >= _amount, "Sorbettiere: you cant eat that much popsicles");
         updatePool(_pid);
-        uint256 pending =
+        uint128 pending =
             user.amount * pool.accYelPerShare / 1e12 - user.rewardDebt + user.remainingYelTokenReward;
         user.remainingYelTokenReward = safeRewardTransfer(msg.sender, pending);
         user.amount -= _amount;
@@ -628,27 +666,28 @@ contract YELStaking is Ownable {
         pool.stakingToken.safeTransfer(address(msg.sender), _amount);
         emit Withdraw(msg.sender, _pid, _amount);
     }
-    
+
     // Withdraw without caring about rewards. EMERGENCY ONLY.
     function emergencyWithdraw(uint256 _pid) public {
         PoolInfo storage pool = poolInfo[_pid];
         UserInfo storage user = userInfo[_pid][msg.sender];
-        uint256 userAmount = user.amount;
-        pool.stakingTokenTotalAmount -= userAmount;
         user.amount = 0;
         user.rewardDebt = 0;
         user.remainingYelTokenReward = 0;
-        pool.stakingToken.safeTransfer(address(msg.sender), userAmount);
-        emit EmergencyWithdraw(msg.sender, _pid, userAmount);
+        pool.stakingToken.safeTransfer(address(msg.sender), user.amount);
+        emit EmergencyWithdraw(msg.sender, _pid, user.amount);
     }
 
-    // Safe YEL transfer function. Just in case if the pool does not have enough YEL token,
+    // Safe yel transfer function. Just in case if the pool does not have enough YEL token,
     // The function returns the amount which is owed to the user
-    function safeRewardTransfer(address _to, uint256 _amount) internal returns(uint256) {
+    function safeRewardTransfer(address _to, uint128 _amount) internal returns(uint128) {
         uint256 yelTokenBalance = yel.balanceOf(address(this));
-        if (_amount > yelTokenBalance) {
+        if (yelTokenBalance == 0) { //save some gas fee
+            return _amount;
+        }
+        if (_amount > yelTokenBalance) { //save some gas fee
             yel.safeTransfer(_to, yelTokenBalance);
-            return _amount - yelTokenBalance;
+            return _amount - uint128(yelTokenBalance);
         }
         yel.safeTransfer(_to, _amount);
         return 0;
